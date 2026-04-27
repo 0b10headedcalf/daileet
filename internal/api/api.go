@@ -35,6 +35,11 @@ func (c *Client) SetSession(token string) {
 	c.session = token
 }
 
+// HasSession reports whether a session cookie has been set.
+func (c *Client) HasSession() bool {
+	return c.session != ""
+}
+
 // gqlRequest is the JSON shape LeetCode's GraphQL endpoint expects.
 // The `json:"..."` struct tags control the key names during serialization —
 // without them, encoding/json uses the field name as-is (e.g. "Query" not "query").
@@ -92,8 +97,76 @@ func (c *Client) Query(q string, vars map[string]any) (string, error) {
 // ProblemMeta holds minimal metadata for a LeetCode problem.
 type ProblemMeta struct {
 	Title      string
+	TitleSlug  string
 	Difficulty string
 	IsPaidOnly bool
+}
+
+// FetchUserSolved hits LeetCode's REST endpoint and returns metadata for every
+// problem the authenticated user has solved (status == "ac").
+func (c *Client) FetchUserSolved() ([]ProblemMeta, error) {
+	req, err := http.NewRequest("GET", LeetCodeURL+"/api/problems/all/", nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	if c.session != "" {
+		req.AddCookie(&http.Cookie{Name: "LEETCODE_SESSION", Value: c.session})
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	var payload struct {
+		UserName string `json:"user_name"`
+		Pairs    []struct {
+			Status     string `json:"status"`
+			Difficulty struct {
+				Level int `json:"level"`
+			} `json:"difficulty"`
+			Stat struct {
+				Title     string `json:"question__title"`
+				TitleSlug string `json:"question__title_slug"`
+			} `json:"stat"`
+		} `json:"stat_status_pairs"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+
+	if payload.UserName == "" {
+		return nil, fmt.Errorf("not authenticated: no valid LEETCODE_SESSION")
+	}
+
+	var out []ProblemMeta
+	for _, p := range payload.Pairs {
+		if p.Status != "ac" {
+			continue
+		}
+		meta := ProblemMeta{
+			Title: p.Stat.Title,
+			TitleSlug: p.Stat.TitleSlug,
+		}
+		switch p.Difficulty.Level {
+		case 1:
+			meta.Difficulty = "Easy"
+		case 2:
+			meta.Difficulty = "Medium"
+		case 3:
+			meta.Difficulty = "Hard"
+		default:
+			meta.Difficulty = "Medium"
+		}
+		out = append(out, meta)
+	}
+	return out, nil
 }
 
 // FetchProblemMeta queries LeetCode for a problem by title slug.

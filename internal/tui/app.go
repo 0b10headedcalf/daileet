@@ -57,7 +57,7 @@ func NewApp(db *sql.DB) *appModel {
 		client:     client,
 		screen:     screenSplash,
 		splash:     newSplashModel(),
-		menu:       newMenuModel(),
+		menu:       newMenuModel(client.HasSession()),
 		dueList:    newProblemListModel(listDue),
 		solvedList: newProblemListModel(listSolved),
 		editor:     newEditorModel(),
@@ -91,9 +91,13 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case menuLogin:
 			m.screen = screenLogin
 			return m, m.login.Init()
+		case menuImportSolved:
+			return m, m.importSolved()
 		case menuPresets:
 			m.screen = screenPresets
 			return m, m.presets.Init()
+		case menuClearData:
+			return m, m.clearAllData()
 		}
 	case goBackMsg:
 		m.screen = screenMenu
@@ -129,13 +133,20 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case saveSessionMsg:
 		return m, m.saveSession(msg.session)
 	case loginSuccessMsg:
-		// Handled by login model
+		// Update menu auth indicator
+		m.menu, _ = m.menu.Update(setAuthStatusMsg{loggedIn: m.client.HasSession()})
 	case loadPresetMsg:
 		return m, m.loadPreset(msg.choice)
 	case loadCustomPresetMsg:
 		return m, m.loadCustomPreset(msg.path)
 	case presetLoadedMsg:
 		m.presets, _ = m.presets.Update(msg)
+		return m, nil
+	case importSolvedResultMsg:
+		m.menu, _ = m.menu.Update(msg)
+		return m, nil
+	case clearDataResultMsg:
+		m.menu, _ = m.menu.Update(msg)
 		return m, nil
 	}
 
@@ -372,4 +383,51 @@ func (m *appModel) addProblemsFromSlugs(slugs []string) tea.Msg {
 		}
 	}
 	return presetLoadedMsg{added: added, failed: failed}
+}
+
+func (m *appModel) importSolved() tea.Cmd {
+	return func() tea.Msg {
+		metas, err := m.client.FetchUserSolved()
+		if err != nil {
+			return importSolvedResultMsg{err: err}
+		}
+		now := time.Now()
+		problems := make([]models.Problem, 0, len(metas))
+		for _, meta := range metas {
+			problems = append(problems, models.Problem{
+				Title:        meta.Title,
+				TitleSlug:    meta.TitleSlug,
+				Difficulty:   models.Difficulty(meta.Difficulty),
+				URL:          fmt.Sprintf("https://leetcode.com/problems/%s/", meta.TitleSlug),
+				Status:       "review",
+				Repetitions:  1,
+				Interval:     1,
+				EaseFactor:   2.5,
+				LastReviewed: &now,
+			})
+		}
+		added, updated, err := storage.ImportSolvedProblems(m.db, problems)
+		return importSolvedResultMsg{added: added, updated: updated, total: len(problems), err: err}
+	}
+}
+
+type importSolvedResultMsg struct {
+	added   int
+	updated int
+	total   int
+	err     error
+}
+
+func (m *appModel) clearAllData() tea.Cmd {
+	return func() tea.Msg {
+		if err := storage.ClearAllUserData(m.db); err != nil {
+			return clearDataResultMsg{err: err}
+		}
+		m.client.SetSession("")
+		return clearDataResultMsg{}
+	}
+}
+
+type clearDataResultMsg struct {
+	err error
 }

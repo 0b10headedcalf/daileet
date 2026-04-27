@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -12,7 +14,9 @@ const (
 	menuSolved
 	menuEditor
 	menuLogin
+	menuImportSolved
 	menuPresets
+	menuClearData
 )
 
 var menuItems = []string{
@@ -20,17 +24,21 @@ var menuItems = []string{
 	"See Previously Solved Problems",
 	"Manually Edit Problem List",
 	"Log In With LeetCode",
+	"Import My Solved Problems",
 	"Presets",
+	"[DEV] Clear All User Data",
 }
 
 type menuModel struct {
-	cursor int
-	width  int
-	height int
+	cursor   int
+	width    int
+	height   int
+	loggedIn bool
+	msg      string
 }
 
-func newMenuModel() menuModel {
-	return menuModel{cursor: 0}
+func newMenuModel(loggedIn bool) menuModel {
+	return menuModel{cursor: 0, loggedIn: loggedIn}
 }
 
 func (m menuModel) Init() tea.Cmd {
@@ -57,6 +65,21 @@ func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+	case setAuthStatusMsg:
+		m.loggedIn = msg.loggedIn
+	case importSolvedResultMsg:
+		if msg.err != nil {
+			m.msg = ErrorStyle.Render(fmt.Sprintf("Import failed: %v", msg.err))
+		} else {
+			m.msg = SuccessStyle.Render(fmt.Sprintf("Imported %d solved problems (%d new, %d updated)", msg.total, msg.added, msg.updated))
+		}
+	case clearDataResultMsg:
+		if msg.err != nil {
+			m.msg = ErrorStyle.Render(fmt.Sprintf("Clear failed: %v", msg.err))
+		} else {
+			m.msg = SuccessStyle.Render("All user data cleared.")
+			m.loggedIn = false
+		}
 	}
 	return m, nil
 }
@@ -72,16 +95,27 @@ func (m menuModel) View() tea.View {
 	}
 
 	header := TitleStyle.Render("Daileet")
+
+	authIndicator := InfoStyle.Render("Not logged in")
+	if m.loggedIn {
+		authIndicator = SuccessStyle.Render("Logged in to LeetCode")
+	}
+
 	footer := InfoStyle.Render("j/k or ↑/↓ to navigate • Enter to select • q to quit")
 
-	content := lipgloss.JoinVertical(
-		lipgloss.Center,
+	lines := []string{
 		header,
 		"",
-		lipgloss.JoinVertical(lipgloss.Left, items...),
+		authIndicator,
 		"",
-		footer,
-	)
+		lipgloss.JoinVertical(lipgloss.Left, items...),
+	}
+	if m.msg != "" {
+		lines = append(lines, "", m.msg)
+	}
+	lines = append(lines, "", footer)
+
+	content := lipgloss.JoinVertical(lipgloss.Center, lines...)
 
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
 	v.AltScreen = true
@@ -90,4 +124,8 @@ func (m menuModel) View() tea.View {
 
 type menuSelectedMsg struct {
 	choice menuChoice
+}
+
+type setAuthStatusMsg struct {
+	loggedIn bool
 }
