@@ -9,9 +9,9 @@
 
 <p align="center">
   <strong>A terminal-based spaced-repetition app for LeetCode</strong>
-</p>, built with [Bubble Tea](https://github.com/charmbracelet/bubbletea). Track the problems you've solved, review them on an SM-2 schedule, and import your existing LeetCode submissions.
+</p> Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea). Track the problems you've solved, review them on an SM-2 schedule, and import your existing LeetCode submissions.
 
-![Built with Go](https://img.shields.io/badge/Built%20with-Go-00ADD8?style=flat&logo=go)
+![Go](https://img.shields.io/badge/Built%20with-Go-00ADD8?style=flat&logo=go)
 
 ---
 
