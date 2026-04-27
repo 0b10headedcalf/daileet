@@ -74,6 +74,17 @@ func (m *appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.splash, _ = m.splash.Update(msg)
+		m.menu, _ = m.menu.Update(msg)
+		m.dueList, _ = m.dueList.Update(msg)
+		m.solvedList, _ = m.solvedList.Update(msg)
+		m.editor, _ = m.editor.Update(msg)
+		m.login, _ = m.login.Update(msg)
+		m.presets, _ = m.presets.Update(msg)
+		if m.review != nil {
+			m.review, _ = m.review.Update(msg)
+		}
 	case splashDoneMsg:
 		m.screen = screenMenu
 		return m, m.menu.Init()
@@ -335,7 +346,7 @@ func (m *appModel) loadPresetFromPath(path string) tea.Cmd {
 	return func() tea.Msg {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return presetLoadedMsg{added: 0, failed: 1}
+			return presetLoadedMsg{added: 0, failed: 1, failedSlugs: []string{"(could not read file)"}}
 		}
 		var slugs []string
 		if err := json.Unmarshal(data, &slugs); err != nil {
@@ -350,7 +361,7 @@ func (m *appModel) loadPresetFromPath(path string) tea.Cmd {
 					}
 				}
 			} else {
-				return presetLoadedMsg{added: 0, failed: 1}
+				return presetLoadedMsg{added: 0, failed: 1, failedSlugs: []string{"(invalid JSON)"}}
 			}
 		}
 		return m.addProblemsFromSlugs(slugs)
@@ -359,6 +370,7 @@ func (m *appModel) loadPresetFromPath(path string) tea.Cmd {
 
 func (m *appModel) addProblemsFromSlugs(slugs []string) tea.Msg {
 	var added, failed int
+	var failedSlugs []string
 	for _, slug := range slugs {
 		slug = strings.TrimSpace(slug)
 		if slug == "" {
@@ -378,11 +390,12 @@ func (m *appModel) addProblemsFromSlugs(slugs []string) tea.Msg {
 		}
 		if err := storage.InsertProblem(m.db, p); err != nil {
 			failed++
+			failedSlugs = append(failedSlugs, slug)
 		} else {
 			added++
 		}
 	}
-	return presetLoadedMsg{added: added, failed: failed}
+	return presetLoadedMsg{added: added, failed: failed, failedSlugs: failedSlugs}
 }
 
 func (m *appModel) importSolved() tea.Cmd {

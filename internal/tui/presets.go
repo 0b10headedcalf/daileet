@@ -27,6 +27,7 @@ type presetsMode int
 const (
 	presetsMenu presetsMode = iota
 	presetsInputPath
+	presetsLoading
 )
 
 type presetsModel struct {
@@ -52,6 +53,10 @@ func (m presetsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == presetsInputPath {
 			return m.handleInputPath(msg)
 		}
+		if m.mode == presetsLoading {
+			// Block all input while loading
+			return m, nil
+		}
 		switch msg.String() {
 		case "up", "k":
 			if m.cursor > 0 {
@@ -69,6 +74,8 @@ func (m presetsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.msg = InfoStyle.Render("Enter path to JSON file with problem slugs, then press Enter:")
 				return m, nil
 			}
+			m.mode = presetsLoading
+			m.msg = ""
 			return m, func() tea.Msg { return loadPresetMsg{choice: choice} }
 		case "esc":
 			return m, func() tea.Msg { return goBackMsg{} }
@@ -76,12 +83,19 @@ func (m presetsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case presetLoadedMsg:
+		m.mode = presetsMenu
 		if msg.failed > 0 {
 			m.msg = ErrorStyle.Render(fmt.Sprintf("Added %d, failed %d", msg.added, msg.failed))
+			if len(msg.failedSlugs) > 0 {
+				failedList := strings.Join(msg.failedSlugs, ", ")
+				if len(failedList) > 60 {
+					failedList = failedList[:57] + "..."
+				}
+				m.msg += "\n" + InfoStyle.Render("Failed: "+failedList)
+			}
 		} else {
 			m.msg = SuccessStyle.Render(fmt.Sprintf("Added %d problems!", msg.added))
 		}
-		m.mode = presetsMenu
 	case tea.PasteMsg:
 		if m.mode == presetsInputPath {
 			m.input += msg.Content
@@ -101,6 +115,8 @@ func (m presetsModel) handleInputPath(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 			m.msg = ErrorStyle.Render("Path cannot be empty")
 			return m, nil
 		}
+		m.mode = presetsLoading
+		m.msg = ""
 		return m, func() tea.Msg { return loadCustomPresetMsg{path: path} }
 	case "esc":
 		m.mode = presetsMenu
@@ -123,7 +139,16 @@ func (m presetsModel) handleInputPath(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 func (m presetsModel) View() tea.View {
 	var content string
 
-	if m.mode == presetsInputPath {
+	if m.mode == presetsLoading {
+		lines := []string{
+			TitleStyle.Render("Presets"),
+			"",
+			PromptStyle.Render("Adding problems, please wait..."),
+			"",
+			InfoStyle.Render("This may take a few seconds"),
+		}
+		content = lipgloss.JoinVertical(lipgloss.Center, lines...)
+	} else if m.mode == presetsInputPath {
 		lines := []string{
 			TitleStyle.Render("Custom Preset"),
 			"",
@@ -169,6 +194,7 @@ type loadCustomPresetMsg struct {
 }
 
 type presetLoadedMsg struct {
-	added  int
-	failed int
+	added       int
+	failed      int
+	failedSlugs []string
 }

@@ -26,7 +26,7 @@ var menuItems = []string{
 	"Log In With LeetCode",
 	"Import My Solved Problems",
 	"Presets",
-	"[DEV] Clear All User Data",
+	"Clear All User Data",
 }
 
 type menuModel struct {
@@ -115,9 +115,9 @@ func (m menuModel) View() tea.View {
 	}
 	lines = append(lines, "", footer)
 
-	content := lipgloss.JoinVertical(lipgloss.Center, lines...)
+	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 
-	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content))
+	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, BoxStyle.Render(content)))
 	v.AltScreen = true
 	return v
 }
