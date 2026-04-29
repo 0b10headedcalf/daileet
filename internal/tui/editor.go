@@ -17,13 +17,14 @@ const (
 )
 
 type editorModel struct {
-	mode     editorMode
-	problems []models.Problem
-	cursor   int
-	width    int
-	height   int
-	input    string
-	msg      string
+	mode         editorMode
+	problems     []models.Problem
+	cursor       int
+	scrollOffset int
+	width        int
+	height       int
+	input        string
+	msg          string
 }
 
 func newEditorModel() editorModel {
@@ -43,6 +44,7 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case loadedEditorProblemsMsg:
 		m.problems = msg.problems
 		m.cursor = 0
+		m.scrollOffset = 0
 		m.msg = ""
 	case tea.PasteMsg:
 		if m.mode == editorAddInput {
@@ -66,6 +68,22 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.problems)-1 {
 				m.cursor++
 			}
+		case "pgup":
+			visible := m.maxVisible()
+			m.cursor -= visible
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+		case "pgdown":
+			visible := m.maxVisible()
+			m.cursor += visible
+			if m.cursor >= len(m.problems) {
+				m.cursor = len(m.problems) - 1
+			}
+		case "home", "g":
+			m.cursor = 0
+		case "end", "G":
+			m.cursor = len(m.problems) - 1
 		case "a":
 			m.mode = editorAddInput
 			m.input = ""
@@ -85,6 +103,7 @@ func (m editorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q":
 			return m, tea.Quit
 		}
+		m.clampScroll()
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -121,7 +140,13 @@ func (m editorModel) handleAddInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (m editorModel) View() tea.View {
 	var list []string
-	for i, p := range m.problems {
+	start := m.scrollOffset
+	end := start + m.maxVisible()
+	if end > len(m.problems) {
+		end = len(m.problems)
+	}
+	for i := start; i < end; i++ {
+		p := m.problems[i]
 		line := fmt.Sprintf("%s  %s", difficultyBadge(p.Difficulty), p.Title)
 		if i == m.cursor {
 			list = append(list, SelectedMenuItemStyle.Render("> "+line))
@@ -140,10 +165,17 @@ func (m editorModel) View() tea.View {
 		inputBox = m.msg
 	}
 
+	var header string
+	if len(m.problems) > m.maxVisible() {
+		header = fmt.Sprintf("a add • d delete • ↑/↓/pgup/pgdown • %d/%d • esc back • q quit", m.cursor+1, len(m.problems))
+	} else {
+		header = "a add • d delete selected • esc back • q quit"
+	}
+
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		TitleStyle.Render("Problem Editor"),
-		InfoStyle.Render("a add • d delete selected • esc back • q quit"),
+		InfoStyle.Render(header),
 		"",
 		lipgloss.JoinVertical(lipgloss.Left, list...),
 		"",
@@ -153,6 +185,34 @@ func (m editorModel) View() tea.View {
 	v := tea.NewView(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, BoxStyle.Render(content)))
 	v.AltScreen = true
 	return v
+}
+
+func (m editorModel) maxVisible() int {
+	const overhead = 12 // borders, padding, title, header, empty lines, inputBox
+	v := m.height - overhead
+	if v < 1 {
+		return 1
+	}
+	return v
+}
+
+func (m *editorModel) clampScroll() {
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+	if m.cursor >= len(m.problems) {
+		m.cursor = len(m.problems) - 1
+		if m.cursor < 0 {
+			m.cursor = 0
+		}
+	}
+	visible := m.maxVisible()
+	if m.cursor < m.scrollOffset {
+		m.scrollOffset = m.cursor
+	}
+	if m.cursor >= m.scrollOffset+visible {
+		m.scrollOffset = m.cursor - visible + 1
+	}
 }
 
 type refreshEditorMsg struct{}
